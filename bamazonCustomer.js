@@ -1,6 +1,6 @@
 var mysql = require('mysql');
 var inquirer = require('inquirer');
-var Table = require('cli-table');
+require('console.table');
 
 var connection = mysql.createConnection({
     host: 'localhost',
@@ -8,55 +8,107 @@ var connection = mysql.createConnection({
     user: 'root',
     password: '04Autumn',
     database: 'bamazon'
-})
+});
 
 connection.connect(function (err) {
-    if (err) throw err;
-    console.log('Connected as id' + connection.threadId);
-    startBuying();
-})
+    if (err) {
+        console.error('error connecting ' + err.stack);
+    }
+    buyProducts();
+});
 
-function printStuff(res) {
-    var table = new Table({
-        head: ['Item ID', 'Product Name', 'Department', 'Cost', 'Stock'],
-        colWidths: [10, 45, 40, 8, 8]
+function buyProducts() {
+    connection.query('SELECT * FROM products', function (err, res) {
+        if (err) throw err;
+
+        console.table(res);
+
+        promptBuyItem(res);
     });
-    for (var i = 0; i < res.length; i++) {
-        table.push([res[i].itemID, res[i].product_name, res[i].department_name, res[i].item_cost, res[i].stock_quantity]);
-    }
-    console.log(table.push());
 }
-    var startBuying = function () {
-        connection.query('SELECT * FROM products', function (err, res) {
-            printStuff(res);
-            var choiceArray = [];
-            for (var i = 0; i < res.length; i++) {
-                choiceArray.push(res[i].product_name);
-            }
-            inquirer.prompt([{
-                name: 'item',
-                type: 'input',
-                message: 'Which item would you like to purchase? (Enter the Item ID)'
-            },
+function promptBuyItem(inventory) {
+    inquirer
+        .prompt( [ 
             {
-                name: 'quantity',
-                type: 'input',
-                message: 'How many would you like to purchase?'
+            type: 'input',
+            name: 'choice',
+            message: 'What is the ID of item would you like to purchase? (Enter the Item ID)',
+            validate: function (val) {
+                return !isNaN() || val.toLowerCase() === 'q';
+            }
+        }
+        ])
+        .then(function (val) {
+            checkIfShouldExit(val.choice);
+            var choiceId = parseInt(val.choice);
+            var product = checkInventory(choiceId, inventory);
 
-            }]).then(function(answer) {
-                console.log(answer);
-                var itemID = answer.item;
-                console.log(itemID);
-                var chosenItem = res[itemID - 1];
-                console.log(chosenItem);
-                var new_quantity = chosenItem.stock_quantity - new_quantity;
-                if (new_quantity >= 0) {
-                    connection.query('UPDATE products SET ? WHERE itemID = ?', [{ stock_quantity: new_quantity }, itemID]);
-                    startBuying();
-                } else {
-                    console.log('There are not enough in stock for you to purchase that many.');
-                    startBuying();
-                }
-            })
-        })
+            if (product) {
+                promptBuyItemQuantity(product);
+            }
+            else {
+                console.log('\nThat item is not in the inventory.');
+                loadProducts();
+            }
+        });
     }
+        function promptButItemQuantity(product) {
+            inquirer
+            .prompt( [
+                {
+                  type: 'input',
+                  name: 'quantity',
+                  message: 'How many would you like?',
+                  validate: function(val) {
+                      return val  > 0 || val.toLowerCase() ==='q';
+                  }
+                }
+            ])
+            .then(function(val) {
+                checkIfShouldExit(val.quantity);
+                var quantity = parseInt(val.quantity);
+          
+                if (quantity > product.stock_quantity) {
+                  console.log('\nInsufficient quantity!');
+                  loadProducts();
+                }
+                else {
+
+                  makePurchase(product, quantity);
+                }
+              });
+          }
+          
+          function makePurchase(product, quantity) {
+            connection.query(
+              'UPDATE products SET stock_quantity = stock_quantity - ? WHERE item_id = ?',
+              [quantity, product.item_id],
+              function(err, res) {
+
+                console.log('\nSuccessfully purchased ' + quantity + ' ' + product.product_name + 's!');
+                loadProducts();
+              }
+            );
+          }
+          
+
+          function checkInventory(choiceId, inventory) {
+            for (var i = 0; i < inventory.length; i++) {
+              if (inventory[i].item_id === choiceId) {
+                return inventory[i];
+              }
+            }
+    
+            return null;
+          }
+          
+          
+          function checkIfShouldExit(choice) {
+            if (choice.toLowerCase() === 'q') {
+
+              console.log('Goodbye!');
+              process.exit(0);
+            }
+          }
+          
+        
